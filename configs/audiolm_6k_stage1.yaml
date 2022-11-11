@@ -1,11 +1,23 @@
-# VQ-Diffusion-B on cub200
+# VQ-Diffusion on librilight 6k stage 1
 model:
   target: image_synthesis.modeling.models.dalle.DALLE
   params:
-    content_info: {key: image}
-    condition_info: {key: text}
+    content_info: {key: src_tokens}
+    condition_info: {key: prompt}
     content_codec_config: 
+      target: image_synthesis.modeling.codecs.speech_codec.codec.Tokenize
+      params:
+        pad_value: 1
+        seq_len: 750
+        tokens_per_frame: 4
+        mask_half: False
     condition_codec_config:
+      target: image_synthesis.modeling.codecs.speech_codec.codec.Tokenize
+      params:
+        pad_value: 1
+        seq_len: 200
+        tokens_per_frame: 1
+        mask_half: False
     diffusion_config:      
     # target: image_synthesis.modeling.transformers.gpt_like_transformer.GPTLikeTransformer
       target: image_synthesis.modeling.transformers.diffusion_transformer.DiffusionTransformer
@@ -21,7 +33,7 @@ model:
           params:
             attn_type: 'selfcross'
             n_layer: 19
-            condition_seq_len: 200    ###### 77 for clip and 256 for dalle
+            condition_seq_len: 500    ###### 77 for clip and 256 for dalle
             content_seq_len: 3000  # 32 x 32
             content_spatial_size: [750, 4]
             n_embd: 512 # the dim of embedding dims
@@ -33,17 +45,19 @@ model:
             timestep_type: 'adalayernorm'    # adainsnorm or adalayernorm and abs
             mlp_hidden_times: 4
         condition_emb_config:
-          target: torch.nn.Embedding
+          target: image_synthesis.modeling.embeddings.dalle_mask_image_embedding.DalleMaskImageEmbedding
           params:
-            num_embeddings: 1032
-            embedding_dim: 512
-            padding_idx: 2
+            num_embed: 1032
+            embed_dim: 512
+            spatial_size: [200, 1]
+            padding_idx: 1
         content_emb_config:
-          target: torch.nn.Embedding
+          target: image_synthesis.modeling.embeddings.dalle_mask_image_embedding.DalleMaskImageEmbedding
           params:
-            num_embeddings: 1028    #should be quantize_number
-            embedding_dim: 512
-            padding_idx: 2
+            num_embed: 1028    #should be quantize_number
+            embed_dim: 512
+            spatial_size: [750, 4]
+            padding_idx: 1
 
 solver:
   base_lr: 3.0e-6
@@ -98,20 +112,24 @@ dataloader:
   train_datasets: # a list of configures, so we can combine several schedulers
     - target: image_synthesis.data.speech_dataset.AudioLMDataset
       params:
-        data_root: /datablob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        prompt_data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/prompt/data-bin/
         phase: train
         prev_sample_rate: 75
         sample_rate: 75
         tokens_per_sample: 750
-        tokens_per_frame: 8
+        tokens_per_frame: 4
+        condition_seq_len: 500
         stage: 1
   validation_datasets:
     - target: image_synthesis.data.speech_dataset.AudioLMDataset
       params:
-        data_root: /datablob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        prompt_data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/prompt/data-bin/
         phase: valid
         prev_sample_rate: 75
         sample_rate: 75
         tokens_per_sample: 750
-        tokens_per_frame: 8
+        tokens_per_frame: 4
+        condition_seq_len: 500
         stage: 1

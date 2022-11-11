@@ -298,7 +298,6 @@ class DiffusionTransformer(nn.Module):
             raise ValueError
 
     def _train_loss(self, x, cond_emb, is_train=True):                       # get the KL loss
-        pdb.set_trace()
         b, device = x.size(0), x.device
 
         assert self.loss_type == 'vb_stochastic'
@@ -439,15 +438,15 @@ class DiffusionTransformer(nn.Module):
             self.amp = True
         batch_size = input['content_token'].shape[0]
         device = input['content_token'].device
-
         # 1) get embeddding for condition and content     prepare input
         sample_image = input['content_token'].type_as(input['content_token'])
+        diffusion_mask = input['content_mask']
         # cont_emb = self.content_emb(sample_image)
 
         if self.condition_emb is not None:
             with autocast(enabled=False):
-                with torch.no_grad():
-                    cond_emb = self.condition_emb(input['condition_token']) # B x Ld x D   #256*1024
+                #with torch.no_grad():
+                cond_emb = self.condition_emb(input['condition_token']) # B x Ld x D   #256*1024
                 cond_emb = cond_emb.float()
         else: # share condition embeding with content
             if input.get('condition_embed_token') == None:

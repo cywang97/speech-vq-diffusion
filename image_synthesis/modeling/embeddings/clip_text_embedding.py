@@ -68,21 +68,22 @@ class CLIPTextEmbedding(BaseEmbedding):
         index: B x L, index
         mask: B x L, bool type. The value of False indicating padded index
         """
-        assert index.dim() == 2 # B x L
-        text_feature = self.encode_text(index)
+        with torch.no_grad():
+            assert index.dim() == 2 # B x L
+            text_feature = self.encode_text(index)
 
-        if self.embed_dim == 1024:
-            text_features = torch.cat((text_feature, text_feature), dim=2)
-        else:
-            text_features = text_feature
-        if self.normalize:
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            if self.embed_dim == 1024:
+                text_features = torch.cat((text_feature, text_feature), dim=2)
+            else:
+                text_features = text_feature
+            if self.normalize:
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-        if self.additional_last_embedding == True:
-            last_feature = text_feature[torch.arange(text_feature.shape[0]), index.argmax(dim=-1)] @ self.text_projection
-            if self.keep_seq_len_dim:
-                last_feature = last_feature.unsqueeze(dim=1)
-            return text_features, last_feature
+            if self.additional_last_embedding == True:
+                last_feature = text_feature[torch.arange(text_feature.shape[0]), index.argmax(dim=-1)] @ self.text_projection
+                if self.keep_seq_len_dim:
+                    last_feature = last_feature.unsqueeze(dim=1)
+                return text_features, last_feature
 
 
         return text_features

@@ -294,8 +294,6 @@ class DALLE(nn.Module):
         name='none',
         **kwargs
     ):
-        import pdb
-        pdb.set_trace()
         input = self.prepare_input(batch)
         output = self.transformer(input, **kwargs)
         return output
