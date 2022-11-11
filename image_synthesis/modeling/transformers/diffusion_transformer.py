@@ -7,6 +7,8 @@
 
 import math
 import torch
+import pdb
+
 from torch import nn
 import torch.nn.functional as F
 
@@ -144,8 +146,12 @@ class DiffusionTransformer(nn.Module):
         self.zero_vector = None
 
 
-    def multinomial_kl(self, log_prob1, log_prob2):   # compute KL loss on log_prob
-        kl = (log_prob1.exp() * (log_prob1 - log_prob2)).sum(dim=1)
+    def multinomial_kl(self, log_prob1, log_prob2, mask=None):   # compute KL loss on log_prob
+        kl = (log_prob1.exp() * (log_prob1 - log_prob2))
+        if mask is not None:
+            kl = (kl * mask).sum(dim=1)
+        else:
+            kl = kl.sum(dim=1)
         return kl
 
     def q_pred_one_timestep(self, log_x_t, t):         # q(xt|xt_1)
@@ -292,6 +298,7 @@ class DiffusionTransformer(nn.Module):
             raise ValueError
 
     def _train_loss(self, x, cond_emb, is_train=True):                       # get the KL loss
+        pdb.set_trace()
         b, device = x.size(0), x.device
 
         assert self.loss_type == 'vb_stochastic'
@@ -299,17 +306,17 @@ class DiffusionTransformer(nn.Module):
         t, pt = self.sample_time(b, device, 'importance')
 
 
-        log_x_start = index_to_log_onehot(x_start, self.num_classes)
-        log_xt = self.q_sample(log_x_start=log_x_start, t=t)
-        xt = log_onehot_to_index(log_xt)
+        log_x_start = index_to_log_onehot(x_start, self.num_classes)   # q_x0
+        log_xt = self.q_sample(log_x_start=log_x_start, t=t)     #  q_xt
+        xt = log_onehot_to_index(log_xt)                
 
         ############### go to p_theta function ###############
-        log_x0_recon = self.predict_start(log_xt, cond_emb, t=t)            # P_theta(x0|xt)
-        log_model_prob = self.q_posterior(log_x_start=log_x0_recon, log_x_t=log_xt, t=t)      # go through q(xt_1|xt,x0)
+        log_x0_recon = self.predict_start(log_xt, cond_emb, t=t)            # P_theta(x0|xt, y)
+        log_model_prob = self.q_posterior(log_x_start=log_x0_recon, log_x_t=log_xt, t=t)      #P_theta(x_t-1|x_t, y)  go through q(xt_1|xt,x0)
 
         ################## compute acc list ################
-        x0_recon = log_onehot_to_index(log_x0_recon)
-        x0_real = x_start
+        x0_recon = log_onehot_to_index(log_x0_recon)          #x0'
+        x0_real = x_start                         
         xt_1_recon = log_onehot_to_index(log_model_prob)
         xt_recon = log_onehot_to_index(log_xt)
         for index in range(t.size()[0]):
@@ -320,18 +327,18 @@ class DiffusionTransformer(nn.Module):
             self.diffusion_keep_list[this_t] = same_rate.item()*0.1 + self.diffusion_keep_list[this_t]*0.9
 
         # compute log_true_prob now 
-        log_true_prob = self.q_posterior(log_x_start=log_x_start, log_x_t=log_xt, t=t)
-        kl = self.multinomial_kl(log_true_prob, log_model_prob)
+        log_true_prob = self.q_posterior(log_x_start=log_x_start, log_x_t=log_xt, t=t)       # q(x_t-1|x_t, x0)
+        kl = self.multinomial_kl(log_true_prob, log_model_prob)      #L_t-1
         mask_region = (xt == self.num_classes-1).float()
         mask_weight = mask_region * self.mask_weight[0] + (1. - mask_region) * self.mask_weight[1]
         kl = kl * mask_weight
         kl = sum_except_batch(kl)
 
-        decoder_nll = -log_categorical(log_x_start, log_model_prob)
+        decoder_nll = -log_categorical(log_x_start, log_model_prob)     # L_0
         decoder_nll = sum_except_batch(decoder_nll)
 
         mask = (t == torch.zeros_like(t)).float()
-        kl_loss = mask * decoder_nll + (1. - mask) * kl
+        kl_loss = mask * decoder_nll + (1. - mask) * kl    # t==0
         
 
         Lt2 = kl_loss.pow(2)

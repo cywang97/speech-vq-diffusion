@@ -1,0 +1,109 @@
+# VQ-Diffusion-B on cub200
+model:
+  target: image_synthesis.modeling.models.dalle.UC_DALLE
+  params:
+    content_info: {key: src_tokens}
+    content_codec_config: 
+    diffusion_config:      
+    # target: image_synthesis.modeling.transformers.gpt_like_transformer.GPTLikeTransformer
+      target: image_synthesis.modeling.transformers.diffusion_transformer.DiffusionTransformer
+      params:
+        diffusion_step: 100
+        alpha_init_type: 'alpha1'       # init_type = fix or cos or linear 
+        auxiliary_loss_weight: 1.0e-3
+        adaptive_auxiliary_loss: True
+        mask_weight: [1, 1]    # the loss weight on mask region and non-mask region
+
+        transformer_config:
+          target: image_synthesis.modeling.transformers.transformer_utils.UnCondition2ImageTransformer
+          params:
+            attn_type: 'self'
+            n_layer: 12
+            content_seq_len: 1800  # 750 * 4
+            content_spatial_size: [225, 8]
+            n_embd: 512 # the dim of embedding dims
+            n_head: 16 
+            attn_pdrop: 0.0
+            resid_pdrop: 0.0
+            block_activate: GELU2
+            timestep_type: 'adalayernorm'    # adainsnorm or adalayernorm and abs
+            mlp_hidden_times: 4
+            mlp_type: 'conv_mlp'
+        content_emb_config:
+          target: torch.nn.Embedding
+          params:
+            num_embeddings: 1028    #should be quantize_number
+            embedding_dim: 512
+            padding_idx: 2
+
+
+solver:
+  base_lr: 3.0e-6
+  adjust_lr: none # not adjust lr according to total batch_size
+  max_epochs: 300
+  save_epochs: 1
+  validation_epochs: 10
+  sample_iterations: epoch  # epoch #30000      # how many iterations to perform sampling once ?
+  print_specific_things: True
+
+  # config for ema
+  ema:
+    decay: 0.99
+    update_interval: 10
+    device: cpu
+
+  clip_grad_norm:
+    target: image_synthesis.engine.clip_grad_norm.ClipGradNorm
+    params:
+      start_iteration: 0
+      end_iteration: 5000
+      max_norm: 0.5
+  optimizers_and_schedulers: # a list of configures, so we can config several optimizers and schedulers
+  - name: none # default is None
+    optimizer:
+      target: torch.optim.AdamW
+      params: 
+        betas: !!python/tuple [0.9, 0.96]
+        weight_decay: 4.5e-2
+            # target: ZeroRedundancyOptimizer
+            # optimizer_class: torch.optim.AdamW
+            # params:
+            # betas: !!python/tuple [0.9, 0.96]
+            # weight_decay: 4.5e-2
+    scheduler:
+      step_iteration: 1
+      target: image_synthesis.engine.lr_scheduler.ReduceLROnPlateauWithWarmup
+      params:
+        factor: 0.5
+        patience: 5000
+        min_lr: 1.0e-6
+        threshold: 1.0e-1
+        threshold_mode: rel
+        warmup_lr: 4.5e-4 # the lr to be touched after warmup
+        warmup: 1000 
+
+dataloader:
+  # data_root: data
+  data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+  batch_size: 2
+  num_workers: 4
+  train_datasets: # a list of configures, so we can combine several schedulers
+    - target: image_synthesis.data.speech_dataset.AudioLMDataset
+      params:
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        phase: train
+        prev_sample_rate: 75
+        sample_rate: 75
+        tokens_per_sample: 750
+        tokens_per_frame: 8
+        stage: 2
+  validation_datasets:
+    - target: image_synthesis.data.speech_dataset.AudioLMDataset
+      params:
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        phase: valid
+        prev_sample_rate: 75
+        sample_rate: 75
+        tokens_per_sample: 750
+        tokens_per_frame: 8
+        stage: 2

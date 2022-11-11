@@ -2,32 +2,10 @@
 model:
   target: image_synthesis.modeling.models.dalle.DALLE
   params:
-    content_info: {key: image}
-    condition_info: {key: text}
+    content_info: {key: src_tokens}
+    condition_info: {key: prompt}
     content_codec_config: 
-    # target: image_synthesis.modeling.codecs.image_codec.openai_dvae.OpenAIDiscreteVAE
-      target: image_synthesis.modeling.codecs.image_codec.taming_gumbel_vqvae.TamingGumbelVQVAE
-      params:
-        trainable: False
-        token_shape: [32, 32]
-        config_path: 'OUTPUT/pretrained_model/taming_dvae/taming_f8_8192_openimages.yaml'
-        ckpt_path: 'OUTPUT/pretrained_model/taming_dvae/taming_f8_8192_openimages_last.pth'
-        num_tokens: 8192
-        quantize_number: 2887
-        mapping_path: './help_folder/statistics/taming_vqvae_2887.pt'
-        # return_logits: True
     condition_codec_config:
-      target: image_synthesis.modeling.codecs.text_codec.tokenize.Tokenize
-      params:
-       context_length: 77     ############# 77 for clip and 256 for dalle
-       add_start_and_end: True
-       with_mask: True
-       pad_value: 0 # 0 for clip embedding and -100 for others
-       clip_embedding: False     ############################   if we use clip embedding 
-       tokenizer_config:
-        target: image_synthesis.modeling.modules.clip.simple_tokenizer.SimpleTokenizer   #########
-        params:
-          end_idx: 49152                              ###################
     diffusion_config:      
     # target: image_synthesis.modeling.transformers.gpt_like_transformer.GPTLikeTransformer
       target: image_synthesis.modeling.transformers.diffusion_transformer.DiffusionTransformer
@@ -43,10 +21,10 @@ model:
           params:
             attn_type: 'selfcross'
             n_layer: 19
-            condition_seq_len: 77    ###### 77 for clip and 256 for dalle
-            content_seq_len: 1024  # 32 x 32
-            content_spatial_size: [32, 32]
-            n_embd: 1024 # the dim of embedding dims
+            condition_seq_len: 200    ###### 77 for clip and 256 for dalle
+            content_seq_len: 6000  # 32 x 32
+            content_spatial_size: [750, 8]
+            n_embd: 512 # the dim of embedding dims
             condition_dim: 512
             n_head: 16 
             attn_pdrop: 0.0
@@ -55,23 +33,19 @@ model:
             timestep_type: 'adalayernorm'    # adainsnorm or adalayernorm and abs
             mlp_hidden_times: 4
         condition_emb_config:
-          target: image_synthesis.modeling.embeddings.clip_text_embedding.CLIPTextEmbedding
+          target: image_synthesis.modeling.embeddings.dalle_mask_image_embedding.DalleMaskImageEmbedding
           params:
-            clip_name: 'ViT-B/32'
-            num_embed: 49408 # 49152+256
-            normalize: True
-            pick_last_embedding: False   # if True same as clip but we need embedding of each word
-            keep_seq_len_dim: False
-            additional_last_embedding: False
+            num_embed: 1032
             embed_dim: 512
+            spatial_size: [200, 1]
+            padding_idx: 2
         content_emb_config:
           target: image_synthesis.modeling.embeddings.dalle_mask_image_embedding.DalleMaskImageEmbedding
           params:
-            num_embed: 2887    #should be quantize_number
-            spatial_size: !!python/tuple [32, 32]
-            embed_dim: 1024
-            trainable: True
-            pos_emb_type: embedding
+            num_embed: 1028    #should be quantize_number
+            embed_dim: 512
+            spatial_size: [750, 8]
+            padding_idx: 2
 
 solver:
   base_lr: 3.0e-6
@@ -120,26 +94,28 @@ solver:
 
 dataloader:
   # data_root: data
-  data_root: /datablob/users/v-chengw/data/CUB-200
-  batch_size: 1
+  data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+  batch_size: 2
   num_workers: 4
   train_datasets: # a list of configures, so we can combine several schedulers
-    - target: image_synthesis.data.cub200_dataset.Cub200Dataset
+    - target: image_synthesis.data.speech_dataset.AudioLMDataset
       params:
-        data_root: /datablob/users/v-chengw/data/CUB-200
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        prompt_data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/prompt/data-bin/
         phase: train
-        im_preprocessor_config:
-          target: image_synthesis.data.utils.image_preprocessor.DalleTransformerPreprocessor   # ImageNet
-          params:
-            size: 256
-            phase: train
+        prev_sample_rate: 75
+        sample_rate: 75
+        tokens_per_sample: 750
+        tokens_per_frame: 8
+        stage: 0
   validation_datasets:
-    - target: image_synthesis.data.cub200_dataset.Cub200Dataset
+    - target: image_synthesis.data.speech_dataset.AudioLMDataset
       params:
-        data_root: /datablob/users/v-chengw/data/CUB-200
-        phase: test
-        im_preprocessor_config:
-          target: image_synthesis.data.utils.image_preprocessor.DalleTransformerPreprocessor
-          params:
-            size: 256
-            phase: val
+        data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
+        prompt_data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/prompt/data-bin/
+        phase: valid
+        prev_sample_rate: 75
+        sample_rate: 75
+        tokens_per_sample: 750
+        tokens_per_frame: 8
+        stage: 0

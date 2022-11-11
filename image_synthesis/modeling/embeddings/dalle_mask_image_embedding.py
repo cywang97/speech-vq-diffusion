@@ -8,8 +8,8 @@ class DalleMaskImageEmbedding(BaseEmbedding):
                  spatial_size=[32, 32], # height and with 
                  embed_dim=3968, 
                  trainable=True,
-                 pos_emb_type='embedding'
-
+                 pos_emb_type='embedding',
+                 padding_idx=None,
         ):
         super().__init__()
         
@@ -24,7 +24,7 @@ class DalleMaskImageEmbedding(BaseEmbedding):
 
         assert self.pos_emb_type in ['embedding', 'parameter']
         
-        self.emb = nn.Embedding(self.num_embed, embed_dim)
+        self.emb = nn.Embedding(self.num_embed, embed_dim, padding_idx=padding_idx)
         if self.pos_emb_type == 'embedding':
             self.height_emb = nn.Embedding(self.spatial_size[0], embed_dim) # height   
             self.width_emb = nn.Embedding(self.spatial_size[1], embed_dim) # width
