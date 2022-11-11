@@ -146,12 +146,8 @@ class DiffusionTransformer(nn.Module):
         self.zero_vector = None
 
 
-    def multinomial_kl(self, log_prob1, log_prob2, mask=None):   # compute KL loss on log_prob
-        kl = (log_prob1.exp() * (log_prob1 - log_prob2))
-        if mask is not None:
-            kl = (kl * mask).sum(dim=1)
-        else:
-            kl = kl.sum(dim=1)
+    def multinomial_kl(self, log_prob1, log_prob2):   # compute KL loss on log_prob
+        kl = (log_prob1.exp() * (log_prob1 - log_prob2)).sum(dim=1)
         return kl
 
     def q_pred_one_timestep(self, log_x_t, t):         # q(xt|xt_1)
@@ -170,7 +166,7 @@ class DiffusionTransformer(nn.Module):
 
         return log_probs
 
-    def q_pred(self, log_x_start, t):           # q(xt|x0)
+    def q_pred(self, log_x_start, t, mask=None):           # q(xt|x0)
         # log_x_start can be onehot or not
         t = (t + (self.num_timesteps + 1))%(self.num_timesteps + 1)
         log_cumprod_at = extract(self.log_cumprod_at, t, log_x_start.shape)         # at~
@@ -186,6 +182,9 @@ class DiffusionTransformer(nn.Module):
             ],
             dim=1
         )
+        if mask is not None:
+            mask = mask.unsqueeze(1)
+            log_probs = log_x_start * (1-mask) + log_probs * mask
 
         return log_probs
 
@@ -267,8 +266,8 @@ class DiffusionTransformer(nn.Module):
         log_sample = index_to_log_onehot(sample, self.num_classes)
         return log_sample
 
-    def q_sample(self, log_x_start, t):                 # diffusion step, q(xt|x0) and sample xt
-        log_EV_qxt_x0 = self.q_pred(log_x_start, t)
+    def q_sample(self, log_x_start, t, mask):                 # diffusion step, q(xt|x0) and sample xt
+        log_EV_qxt_x0 = self.q_pred(log_x_start, t, mask)
 
         log_sample = self.log_sample_categorical(log_EV_qxt_x0)
 
@@ -297,16 +296,15 @@ class DiffusionTransformer(nn.Module):
         else:
             raise ValueError
 
-    def _train_loss(self, x, cond_emb, is_train=True):                       # get the KL loss
+    def _train_loss(self, x, cond_emb, diffusion_mask=None, is_train=True):                       # get the KL loss
         b, device = x.size(0), x.device
 
         assert self.loss_type == 'vb_stochastic'
         x_start = x
         t, pt = self.sample_time(b, device, 'importance')
 
-
         log_x_start = index_to_log_onehot(x_start, self.num_classes)   # q_x0
-        log_xt = self.q_sample(log_x_start=log_x_start, t=t)     #  q_xt
+        log_xt = self.q_sample(log_x_start=log_x_start, t=t, mask=diffusion_mask)     #  q_xt
         xt = log_onehot_to_index(log_xt)                
 
         ############### go to p_theta function ###############
@@ -331,9 +329,13 @@ class DiffusionTransformer(nn.Module):
         mask_region = (xt == self.num_classes-1).float()
         mask_weight = mask_region * self.mask_weight[0] + (1. - mask_region) * self.mask_weight[1]
         kl = kl * mask_weight
+        if diffusion_mask is not None:
+            kl = kl * diffusion_mask
         kl = sum_except_batch(kl)
 
         decoder_nll = -log_categorical(log_x_start, log_model_prob)     # L_0
+        if diffusion_mask is not None:
+            decoder_nll = decoder_nll * diffusion_mask
         decoder_nll = sum_except_batch(decoder_nll)
 
         mask = (t == torch.zeros_like(t)).float()
@@ -353,6 +355,8 @@ class DiffusionTransformer(nn.Module):
         if self.auxiliary_loss_weight != 0 and is_train==True:
             kl_aux = self.multinomial_kl(log_x_start[:,:-1,:], log_x0_recon[:,:-1,:])
             kl_aux = kl_aux * mask_weight
+            if diffusion_mask is not None:
+                kl_aux = kl_aux * diffusion_mask
             kl_aux = sum_except_batch(kl_aux)
             kl_aux_loss = mask * decoder_nll + (1. - mask) * kl_aux
             if self.adaptive_auxiliary_loss == True:
@@ -456,7 +460,7 @@ class DiffusionTransformer(nn.Module):
             
         # now we get cond_emb and sample_image
         if is_train == True:
-            log_model_prob, loss = self._train_loss(sample_image, cond_emb)
+            log_model_prob, loss = self._train_loss(sample_image, cond_emb, diffusion_mask)
             loss = loss.sum()/(sample_image.size()[0] * sample_image.size()[1])
 
         # 4) get output, especially loss
