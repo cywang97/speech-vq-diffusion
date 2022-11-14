@@ -1,9 +1,15 @@
 # VQ-Diffusion-B on cub200
 model:
-  target: image_synthesis.modeling.models.dalle.UC_DALLE
+  target: image_synthesis.modeling.models.unconditional_dalle.UC_DALLE
   params:
     content_info: {key: src_tokens}
     content_codec_config: 
+      target: image_synthesis.modeling.codecs.speech_codec.codec.Tokenize
+      params:
+        pad_value: 1
+        seq_len: 225
+        tokens_per_frame: 8
+        mask_half: True
     diffusion_config:      
     # target: image_synthesis.modeling.transformers.gpt_like_transformer.GPTLikeTransformer
       target: image_synthesis.modeling.transformers.diffusion_transformer.DiffusionTransformer
@@ -28,13 +34,14 @@ model:
             block_activate: GELU2
             timestep_type: 'adalayernorm'    # adainsnorm or adalayernorm and abs
             mlp_hidden_times: 4
-            mlp_type: 'conv_mlp'
+            mlp_type: 'fc'
         content_emb_config:
-          target: torch.nn.Embedding
+          target: image_synthesis.modeling.embeddings.dalle_mask_image_embedding.DalleMaskImageEmbedding
           params:
-            num_embeddings: 1028    #should be quantize_number
-            embedding_dim: 512
-            padding_idx: 2
+            num_embed: 1028    #should be quantize_number
+            spatial_size: [225, 8]
+            embed_dim: 512
+            padding_idx: 1
 
 
 solver:
@@ -85,17 +92,16 @@ solver:
 dataloader:
   # data_root: data
   data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
-  batch_size: 2
+  batch_size: 1
   num_workers: 4
   train_datasets: # a list of configures, so we can combine several schedulers
     - target: image_synthesis.data.speech_dataset.AudioLMDataset
       params:
         data_root: /modelblob/users/v-chengw/data/librilight/lm_stage1/encodec_data/
-        phase: train
+        phase: valid
         prev_sample_rate: 75
         sample_rate: 75
-        tokens_per_sample: 750
-        tokens_per_frame: 8
+        tokens_per_sample: 225
         stage: 2
   validation_datasets:
     - target: image_synthesis.data.speech_dataset.AudioLMDataset
@@ -104,6 +110,5 @@ dataloader:
         phase: valid
         prev_sample_rate: 75
         sample_rate: 75
-        tokens_per_sample: 750
-        tokens_per_frame: 8
+        tokens_per_sample: 225
         stage: 2

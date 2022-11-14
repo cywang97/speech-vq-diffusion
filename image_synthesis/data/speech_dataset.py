@@ -92,7 +92,6 @@ class AudioLMDataset(torch.utils.data.Dataset):
         prev_sample_rate=20,
         sample_rate=20,
         tokens_per_sample=None,
-        tokens_per_frame=8,
         condition_seq_len=200,
         stage=1,
     ):
@@ -103,7 +102,7 @@ class AudioLMDataset(torch.utils.data.Dataset):
         self._label_ratio = self._prev_sample_rate / self._sample_rate
 
         self.tokens_per_sample = tokens_per_sample
-        self.tokens_per_frame = tokens_per_frame
+        self.tokens_per_frame = 8
         self.condition_seq_len = condition_seq_len
         self.stage = stage
 
@@ -176,8 +175,6 @@ class AudioLMDataset(torch.utils.data.Dataset):
         
         if self.stage == 1:
             tokens = frame[:self.tokens_per_frame // 2, :]
-        elif self.stage == 2:
-            tokens = frame[self.tokens_per_frame//2:, :]
         else:
             tokens = frame
 

@@ -266,7 +266,7 @@ class DiffusionTransformer(nn.Module):
         log_sample = index_to_log_onehot(sample, self.num_classes)
         return log_sample
 
-    def q_sample(self, log_x_start, t, mask):                 # diffusion step, q(xt|x0) and sample xt
+    def q_sample(self, log_x_start, t, mask=None):                 # diffusion step, q(xt|x0) and sample xt
         log_EV_qxt_x0 = self.q_pred(log_x_start, t, mask)
 
         log_sample = self.log_sample_categorical(log_EV_qxt_x0)
@@ -298,7 +298,6 @@ class DiffusionTransformer(nn.Module):
 
     def _train_loss(self, x, cond_emb, diffusion_mask=None, is_train=True):                       # get the KL loss
         b, device = x.size(0), x.device
-
         assert self.loss_type == 'vb_stochastic'
         x_start = x
         t, pt = self.sample_time(b, device, 'importance')
@@ -316,9 +315,11 @@ class DiffusionTransformer(nn.Module):
         x0_real = x_start                         
         xt_1_recon = log_onehot_to_index(log_model_prob)
         xt_recon = log_onehot_to_index(log_xt)
+        #corr = 0
         for index in range(t.size()[0]):
             this_t = t[index].item()
             same_rate = (x0_recon[index] == x0_real[index]).sum().cpu()/x0_real.size()[1]
+            #corr += (x0_recon[index] == x0_real[index]).sum().cpu()
             self.diffusion_acc_list[this_t] = same_rate.item()*0.1 + self.diffusion_acc_list[this_t]*0.9
             same_rate = (xt_1_recon[index] == xt_recon[index]).sum().cpu()/xt_recon.size()[1]
             self.diffusion_keep_list[this_t] = same_rate.item()*0.1 + self.diffusion_keep_list[this_t]*0.9
@@ -480,6 +481,7 @@ class DiffusionTransformer(nn.Module):
             condition_mask,
             condition_embed,
             content_token = None,
+            content_mask = None,
             filter_ratio = 0.5,
             temperature = 1.0,
             return_att_weight = False,
@@ -505,6 +507,8 @@ class DiffusionTransformer(nn.Module):
         # get cont_emb and cond_emb
         if content_token != None:
             sample_image = input['content_token'].type_as(input['content_token'])
+        
+        diffusion_mask = content_mask
 
         if self.condition_emb is not None:  # do this
             with torch.no_grad():
@@ -531,7 +535,7 @@ class DiffusionTransformer(nn.Module):
         else:
             t = torch.full((batch_size,), start_step-1, device=device, dtype=torch.long)
             log_x_start = index_to_log_onehot(sample_image, self.num_classes)
-            log_xt = self.q_sample(log_x_start=log_x_start, t=t)
+            log_xt = self.q_sample(log_x_start=log_x_start, t=t, mask=diffusion_mask)
             log_z = log_xt
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):

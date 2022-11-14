@@ -19,11 +19,11 @@ class Tokenize:
         mask = None
         if (tokens == self.pad_value).any():
             mask = (tokens == self.pad_value).byte()
-        
+
         if self.mask_half:
             bs = len(tokens)
             assert tokens.numel() == bs * self.seq_len * self.tokens_per_frame
-            half_mask = torch.ones((bs, self.seq_len, self.tokens_per_frame)).byte()
+            half_mask = torch.ones((bs, self.seq_len, self.tokens_per_frame)).to(tokens.device).byte()
             half_mask[:, :, :self.tokens_per_frame//2] = 0
             half_mask = half_mask.reshape(bs, -1)
             if mask is not None:
@@ -35,6 +35,10 @@ class Tokenize:
             'token': tokens,
             'mask': mask
         }
+
+    def decode(self, token_seq):
+        return token_seq
+        
 
 
 
